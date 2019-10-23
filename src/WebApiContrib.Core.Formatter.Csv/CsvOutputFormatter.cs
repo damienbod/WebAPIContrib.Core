@@ -9,6 +9,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using System.ComponentModel.DataAnnotations;
 using Newtonsoft.Json;
+using System.Dynamic;
 
 namespace WebApiContrib.Core.Formatter.Csv
 {
@@ -89,18 +90,24 @@ namespace WebApiContrib.Core.Formatter.Csv
 
             if (_options.UseSingleLineHeaderInCsv)
             {
-                var values = useJsonAttributes
-                    ? itemType.GetProperties().Where(pi => !pi.GetCustomAttributes<JsonIgnoreAttribute>(false).Any())    // Only get the properties that do not define JsonIgnore
-                        .Select(GetDisplayNameFromNewtonsoftJsonAnnotations)
-                    : itemType.GetProperties().Select(pi => pi.GetCustomAttribute<DisplayAttribute>(false)?.Name ?? pi.Name);
-
+                IEnumerable<string> values = itemType.IsAssignableFrom(typeof(ExpandoObject))
+                    ? ((IDictionary<string, object>)((IEnumerable<object>)context.Object).FirstOrDefault())?.Select(pv => pv.Key)
+                    : useJsonAttributes
+                        ? itemType.GetProperties().Where(pi => !pi.GetCustomAttributes<JsonIgnoreAttribute>(false).Any())    // Only get the properties that do not define JsonIgnore
+                            .Select(GetDisplayNameFromNewtonsoftJsonAnnotations)
+                        : itemType.GetProperties().Select(pi => pi.GetCustomAttribute<DisplayAttribute>(false)?.Name ?? pi.Name);
                 await streamWriter.WriteLineAsync(string.Join(_options.CsvDelimiter, values));
             }
 
 
             foreach (var obj in (IEnumerable<object>)context.Object)
             {
-                var vals = useJsonAttributes
+                var vals = obj is ExpandoObject && obj is IDictionary<string, object> propertyValues
+                    ? propertyValues.Select(pv => new
+                    {
+                        pv.Value,
+                    })
+                    : useJsonAttributes
                     ? obj.GetType().GetProperties()
                         .Where(pi => !pi.GetCustomAttributes<JsonIgnoreAttribute>().Any())
                         .Select(pi => new
